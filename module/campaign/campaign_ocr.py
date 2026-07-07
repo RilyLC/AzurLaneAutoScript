@@ -13,7 +13,7 @@ from module.template.assets import *
 
 class CampaignOcr(ModuleBase):
     stage_entrance = {}
-    campaign_chapter = 0
+    campaign_chapter: str = '0'
     # An approximate area where stages will appear for faster template matching
     _stage_detect_area = (87, 117, 1151, 636)
 
@@ -41,11 +41,21 @@ class CampaignOcr(ModuleBase):
     @staticmethod
     def _campaign_ocr_result_process(result):
         # The result will be like '7--2', because tha dash in game is '–' not '-'
-        result = result.lower().replace('--', '-').replace('--', '-')
-        if result.startswith('-'):
-            result = result[1:]
+        result = result.replace('--', '-').replace('--', '-').lstrip('-')
+
+        # Replace wrong 'I' from results like 'I1-1', '1I-1', 'I-I', '11-I', 'I4-4', to '1'
+        # while keeping results like 'isp-2', 'sp1'
+        def replace_func(match):
+            segment = match.group(0)
+            return segment.replace('I', '1')
+
+        result = re.sub(r'[0-9I]+-[0-9I]+', replace_func, result, count=1)
+
+        # Convert '72' to '7-2'
         if len(result) == 2 and result[0].isdigit():
             result = '-'.join(result)
+
+        result = result.lower()
         return result
 
     @staticmethod
@@ -322,29 +332,42 @@ class CampaignOcr(ModuleBase):
         logger.attr('Chapter', self.campaign_chapter)
         logger.attr('Stage', ', '.join(self.stage_entrance.keys()))
 
-    def get_chapter_index(self, image):
+    def handle_get_chapter_additional(self):
+        """
+        Returns:
+            bool: If clicked
+        """
+        if self.appear(WITHDRAW, offset=(30, 30)):
+            logger.warning(f'get_chapter_index: WITHDRAW appears')
+            raise CampaignNameError
+
+    def get_chapter_index(self, skip_first_screenshot=True):
         """
         A tricky method for ui_ensure_index
 
         Args:
-            image: Screenshot
+            skip_first_screenshot:
 
         Returns:
             int: Chapter index.
         """
         timeout = Timer(2, count=4).start()
         while 1:
+            if skip_first_screenshot:
+                skip_first_screenshot = False
+            else:
+                self.device.screenshot()
+
             if timeout.reached():
                 raise CampaignNameError
-            if self.appear(WITHDRAW, offset=(30, 30)):
-                logger.warning(f'get_chapter_index: WITHDRAW appears')
-                raise CampaignNameError
+            image = self.device.image
             try:
                 self._get_stage_name(image)
                 break
             except (IndexError, CampaignNameError):
-                self.device.screenshot()
-                image = self.device.image
+                pass
+
+            if self.handle_get_chapter_additional():
                 continue
 
         return self._campaign_get_chapter_index(self.campaign_chapter)

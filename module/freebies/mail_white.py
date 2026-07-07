@@ -64,10 +64,13 @@ class MailWhite(UI):
             if self.appear(MAIL_BATCH_CLAIM, offset=(20, 20)):
                 logger.info('Mail entered')
                 return True
+            if self.appear(MAIL_WHITE_EMPTY, offset=(20, 20)):
+                logger.info('Mail empty')
+                return False
             if not has_mail and self.appear(GOTO_MAIN_WHITE, offset=(20, 20)):
                 timeout.start()
                 if timeout.reached():
-                    logger.info('Mail empty')
+                    logger.info('Mail empty, wait GOTO_MAIN_WHITE timeout')
                     return False
 
             # Click
@@ -75,6 +78,8 @@ class MailWhite(UI):
                 has_mail = True
                 continue
             if self.ui_main_appear_then_click(page_mail, offset=(30, 30), interval=3):
+                continue
+            if self._handle_mail_reward():
                 continue
 
     def _mail_quit(self, skip_first_screenshot=True):
@@ -194,6 +199,8 @@ class MailWhite(UI):
             if self.handle_popup_confirm('MAIL_CLAIM'):
                 deleted = True
                 continue
+            if self._handle_mail_reward():
+                continue
 
         # info_bar appears if mail success to delete and no mail deleted
         return True
@@ -249,9 +256,6 @@ class MailWhite(UI):
         if not merit and not maintenance and not trade_license:
             logger.warning('Nothing to claim')
             return False
-        if self.config.SERVER not in ['cn', 'en', 'jp']:
-            logger.warning(f'Mail is not supported in {self.config.SERVER}, please contact server maintainers')
-            return False
 
         # Must using white UI
         self.ui_ensure(page_main)
@@ -259,8 +263,8 @@ class MailWhite(UI):
             logger.info('At page_main_white')
             pass
         elif self.appear(page_main.check_button, offset=(5, 5)):
-            logger.warning('At page_main, cannot enter mail page from old UI')
-            return False
+            logger.info('At page_main')
+            pass
         else:
             logger.warning('Unknown page_main, cannot enter mail page')
             return False

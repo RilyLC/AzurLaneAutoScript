@@ -187,6 +187,21 @@ class GridPredictor:
         return scale
 
     def predict_enemy_genre(self):
+        if self.config.MAP_SIREN_HAS_BOSS_ICON:
+            if self.enemy_scale:
+                return ''
+            image = self.relative_crop((-0.55, -0.2, 0.45, 0.2), shape=(50, 20))
+            image = color_similarity_2d(image, color=(255, 150, 24))
+            if image[image > 221].shape[0] > 200:
+                if TEMPLATE_ENEMY_BOSS.match(image, similarity=0.6):
+                    return 'Siren_Siren'
+        if self.config.MAP_SIREN_HAS_BOSS_ICON_SMALL:
+            if self.relative_hsv_count(area=(0.03, -0.15, 0.63, 0.15), h=(32 - 3, 32 + 3), shape=(50, 20)) > 100:
+                image = self.relative_crop((0.03, -0.15, 0.63, 0.15), shape=(50, 20))
+                image = color_similarity_2d(image, color=(255, 150, 33))
+                if TEMPLATE_ENEMY_BOSS.match(image, similarity=0.7):
+                    return 'Siren_Siren'
+
         image_dic = {}
         scaling_dic = self.config.MAP_ENEMY_GENRE_DETECTION_SCALING
         for name, template in self.template_enemy_genre.items():
@@ -210,6 +225,9 @@ class GridPredictor:
         return None
 
     def predict_boss(self):
+        if self.enemy_genre == 'Siren_Siren':
+            return False
+
         image = self.relative_crop((-0.55, -0.2, 0.45, 0.2), shape=(50, 20))
         image = color_similarity_2d(image, color=(255, 77, 82))
         if TEMPLATE_ENEMY_BOSS.match(image, similarity=0.75):
@@ -296,6 +314,13 @@ class GridPredictor:
         image = rgb2gray(self.relative_crop(area=(-0.5, -0.5, 0.5, 0.5), shape=(60, 60)))
         return TEMPLATE_MOB_MOVE_ICON.match(image)
 
+    def predict_air_strike_icon(self):
+        # area = area_pad((0, 0, 140, 140), pad=5)
+        # image = color_similarity_2d(crop(self.image_trans, area=area, copy=False), color=(255, 255, 160))
+        image = color_similarity_2d(self.image_trans, color=(255, 255, 160))
+        cv2.threshold(image, 175, 255, cv2.THRESH_BINARY, dst=image)
+        return TEMPLATE_AIR_STRIKE_ICON.match(image, similarity=0.7)
+
     @cached_property
     def _image_similar_piece(self):
         return rgb2gray(self.relative_crop(area=(-0.5, -0.5, 0.5, 0.5), shape=(60, 60)))
@@ -314,11 +339,11 @@ class GridPredictor:
         color = cv2.mean(crop(mask.image, area=np.rint(area).astype(int), copy=False))
         return color[0] > 235
 
-    def is_similar_to(self, grid, threshold=0.9):
+    def is_similar_to(self, grid, similarity=0.9):
         """
         Args:
             grid (GridPredictor): Another Grid instance.
-            threshold (float): 0 to 1.
+            similarity (float): 0 to 1.
 
         Returns:
             bool: If current grid is similar to another.
@@ -328,5 +353,5 @@ class GridPredictor:
         piece_1 = self._image_similar_piece
         piece_2 = grid._image_similar_full
         res = cv2.matchTemplate(piece_2, piece_1, cv2.TM_CCOEFF_NORMED)
-        _, similarity, _, point = cv2.minMaxLoc(res)
-        return similarity > threshold
+        _, sim, _, point = cv2.minMaxLoc(res)
+        return sim > similarity

@@ -37,7 +37,7 @@ class GemsCampaignOverride(CampaignBase):
             return result
 
         if self.handle_popup_cancel('IGNORE_LOW_EMOTION'):
-            self.config.GEMS_EMOTION_TRIGGRED = True
+            self.config.GEMS_EMOTION_TRIGGERED = True
             logger.hr('EMOTION WITHDRAW')
 
             while 1:
@@ -80,20 +80,8 @@ class GemsFarming(CampaignRun, FleetEquipment, Dock):
         self.campaign.config.override(EnemyPriority_EnemyScaleBalanceWeight='S1_enemy_first')
 
     @property
-    def change_flagship(self):
-        return 'ship' in self.config.GemsFarming_ChangeFlagship
-
-    @property
-    def change_flagship_equip(self):
-        return 'equip' in self.config.GemsFarming_ChangeFlagship
-
-    @property
     def change_vanguard(self):
         return 'ship' in self.config.GemsFarming_ChangeVanguard
-
-    @property
-    def change_vanguard_equip(self):
-        return 'equip' in self.config.GemsFarming_ChangeVanguard
 
     @property
     def fleet_to_attack(self):
@@ -110,30 +98,11 @@ class GemsFarming(CampaignRun, FleetEquipment, Dock):
         Returns:
             bool: True if flagship changed.
         """
-
-        if self.config.GemsFarming_CommonCV == 'any':
-            index_list = range(3, 5)
-        else:
-            index_list = range(0, 5)
         logger.hr('Change flagship', level=1)
-        logger.attr('ChangeFlagship', self.config.GemsFarming_ChangeFlagship)
         self.fleet_enter(self.fleet_to_attack)
-        if self.change_flagship_equip:
-            logger.hr('Record flagship equipment', level=2)
-            self.fleet_enter_ship(FLEET_DETAIL_ENTER_FLAGSHIP)
-            self.ship_equipment_record_image(index_list=index_list)
-            self.ship_equipment_take_off()
-            self.fleet_back()
 
         logger.hr('Change flagship', level=2)
         success = self.flagship_change_execute()
-
-        if self.change_flagship_equip:
-            logger.hr('Equip flagship equipment', level=2)
-            self.fleet_enter_ship(FLEET_DETAIL_ENTER_FLAGSHIP)
-            self.ship_equipment_take_off()
-            self.ship_equipment_take_on_image(index_list=index_list)
-            self.fleet_back()
 
         return success
 
@@ -148,32 +117,18 @@ class GemsFarming(CampaignRun, FleetEquipment, Dock):
         logger.hr('Change vanguard', level=1)
         logger.attr('ChangeVanguard', self.config.GemsFarming_ChangeVanguard)
         self.fleet_enter(self.fleet_to_attack)
-        if self.change_vanguard_equip:
-            logger.hr('Record vanguard equipment', level=2)
-            self.fleet_enter_ship(FLEET_DETAIL_ENTER)
-            self.ship_equipment_record_image()
-            self.ship_equipment_take_off()
-            self.fleet_back()
 
         logger.hr('Change vanguard', level=2)
         success = self.vanguard_change_execute()
 
-        if self.change_vanguard_equip:
-            logger.hr('Equip vanguard equipment', level=2)
-            self.fleet_enter_ship(FLEET_DETAIL_ENTER)
-            self.ship_equipment_take_off()
-            self.ship_equipment_take_on_image()
-            self.fleet_back()
-
         return success
 
     def _dock_reset(self):
+        self.dock_favourite_set(False, wait_loading=False)
+        self.dock_sort_method_dsc_set(wait_loading=False)
         self.dock_filter_set()
-        self.dock_favourite_set(False)
-        self.dock_sort_method_dsc_set()
 
     def _ship_change_confirm(self, button):
-
         self.dock_select_one(button)
         self._dock_reset()
         self.dock_select_confirm(check_button=page_fleet.check_button)
@@ -182,9 +137,16 @@ class GemsFarming(CampaignRun, FleetEquipment, Dock):
         """
         Get a common rarity cv by config.GemsFarming_CommonCV
         If config.GemsFarming_CommonCV == 'any', return a common lv1 ~ lv33 cv
+
+        _dock_reset() needs to be called later.
+
         Returns:
             Ship:
         """
+        self.dock_favourite_set(False, wait_loading=False)
+        self.dock_sort_method_dsc_set(False, wait_loading=False)
+        self.dock_filter_set(
+            index='cv', rarity='common', extra='enhanceable', sort='total')
 
         logger.hr('FINDING FLAGSHIP')
 
@@ -194,13 +156,12 @@ class GemsFarming(CampaignRun, FleetEquipment, Dock):
 
         if self.config.GemsFarming_CommonCV == 'any':
 
-            self.dock_sort_method_dsc_set(False)
-
             ships = scanner.scan(self.device.image)
             if ships:
                 # Don't need to change current
                 return ships
 
+            # Change to any ship
             scanner.set_limitation(fleet=0)
             return scanner.scan(self.device.image, output=False)
 
@@ -212,8 +173,6 @@ class GemsFarming(CampaignRun, FleetEquipment, Dock):
                 'RANGER': TEMPLATE_RANGER
             }[f'{self.config.GemsFarming_CommonCV.upper()}']
 
-            self.dock_sort_method_dsc_set()
-
             ships = scanner.scan(self.device.image)
             if ships:
                 # Don't need to change current
@@ -224,10 +183,11 @@ class GemsFarming(CampaignRun, FleetEquipment, Dock):
                           if template.match(self.image_crop(ship.button, copy=False), similarity=SIM_VALUE)]
 
             if candidates:
+                # Change to specific ship
                 return candidates
 
             logger.info('No specific CV was found, try reversed order.')
-            self.dock_sort_method_dsc_set(False)
+            self.dock_sort_method_dsc_set(True)
 
             candidates = [ship for ship in scanner.scan(self.device.image)
                           if template.match(self.image_crop(ship.button, copy=False), similarity=SIM_VALUE)]
@@ -237,9 +197,30 @@ class GemsFarming(CampaignRun, FleetEquipment, Dock):
     def get_common_rarity_dd(self):
         """
         Get a common rarity dd with level is 100 (70 for servers except CN) and emotion > 10
+
+        _dock_reset() needs to be called later.
+
         Returns:
             Ship:
         """
+        if self.config.GemsFarming_CommonDD == 'any':
+            faction = ['eagle', 'iron']
+        elif self.config.GemsFarming_CommonDD == 'favourite':
+            faction = 'all'
+        elif self.config.GemsFarming_CommonDD == 'z20_or_z21':
+            faction = 'iron'
+        elif self.config.GemsFarming_CommonDD in ['aulick_or_foote', 'cassin_or_downes']:
+            faction = 'eagle'
+        else:
+            logger.error(f'Invalid CommonDD setting: {self.config.GemsFarming_CommonDD}')
+            raise ScriptError('Invalid GemsFarming_CommonDD')
+
+        favourite = self.config.GemsFarming_CommonDD == 'favourite'
+        self.dock_favourite_set(favourite, wait_loading=False)
+        self.dock_sort_method_dsc_set(True, wait_loading=False)
+        self.dock_filter_set(
+            index='dd', rarity='common', faction=faction, extra='can_limit_break')
+
         logger.hr('FINDING VANGUARD')
 
         if self.config.SERVER in ['cn']:
@@ -248,32 +229,23 @@ class GemsFarming(CampaignRun, FleetEquipment, Dock):
             max_level = 70
 
         scanner = ShipScanner(level=(max_level, max_level), emotion=(10, 150),
-                              fleet=self.fleet_to_attack, status='free')
+                              fleet=[0, self.fleet_to_attack], status='free')
         scanner.disable('rarity')
 
-        self.dock_sort_method_dsc_set()
-
-        ships = scanner.scan(self.device.image)
-        if ships:
-            # Don't need to change current
-            return ships
-
-        scanner.set_limitation(fleet=0)
-        self.dock_favourite_set(self.config.GemsFarming_CommonDD == 'favourite')
-
         if self.config.GemsFarming_CommonDD in ['any', 'favourite', 'z20_or_z21']:
-            return scanner.scan(self.device.image, output=False)
-        
-        candidates = self.find_candidates(self.get_templates(self.config.GemsFarming_CommonDD), scanner)
+            # Change to any ship
+            return scanner.scan(self.device.image)
 
+        candidates = self.find_candidates(self.get_templates(self.config.GemsFarming_CommonDD), scanner)
         if candidates:
+            # Change to specific ship
             return candidates
-        
+
         logger.info('No specific DD was found, try reversed order.')
         self.dock_sort_method_dsc_set(False)
 
+        # Change specific ship
         candidates = self.find_candidates(self.get_templates(self.config.GemsFarming_CommonDD), scanner)
-
         return candidates
 
     def find_candidates(self, template, scanner):
@@ -317,11 +289,15 @@ class GemsFarming(CampaignRun, FleetEquipment, Dock):
             in: page_fleet
             out: page_fleet
         """
-        self.ui_click(FLEET_ENTER_FLAGSHIP,
-                      appear_button=page_fleet.check_button, check_button=DOCK_CHECK, skip_first_screenshot=True)
-        self.dock_filter_set(
-            index='cv', rarity='common', extra='enhanceable', sort='total')
-        self.dock_favourite_set(False)
+        for _ in self.loop():
+            if self.appear(DOCK_CHECK, offset=(20, 20)):
+                break
+            if self.ui_page_appear(page_fleet, interval=5):
+                self.device.click(FLEET_ENTER_FLAGSHIP)
+                continue
+            # 2025.05.29 game tips that infos skin feature when you enter dock
+            if self.handle_game_tips():
+                return True
 
         ship = self.get_common_rarity_cv()
         if ship:
@@ -344,23 +320,15 @@ class GemsFarming(CampaignRun, FleetEquipment, Dock):
             in: page_fleet
             out: page_fleet
         """
-        self.ui_click(FLEET_ENTER,
-                      appear_button=page_fleet.check_button, check_button=DOCK_CHECK, skip_first_screenshot=True)
-
-        if self.config.GemsFarming_CommonDD == 'any':
-            faction = ['eagle', 'iron']
-        elif self.config.GemsFarming_CommonDD == 'favourite':
-            faction = 'all'
-        elif self.config.GemsFarming_CommonDD == 'z20_or_z21':
-            faction = 'iron'
-        elif self.config.GemsFarming_CommonDD in ['aulick_or_foote', 'cassin_or_downes']:
-            faction = 'eagle'
-        else:
-            logger.error(f'Invalid CommonDD setting: {self.config.GemsFarming_CommonDD}')
-            raise ScriptError('Invalid GemsFarming_CommonDD')
-        self.dock_filter_set(
-            index='dd', rarity='common', faction=faction, extra='can_limit_break')
-        self.dock_favourite_set(False)
+        for _ in self.loop():
+            if self.appear(DOCK_CHECK, offset=(20, 20)):
+                break
+            if self.ui_page_appear(page_fleet, interval=5):
+                self.device.click(FLEET_ENTER)
+                continue
+            # 2025.05.29 game tips that infos skin feature when you enter dock
+            if self.handle_game_tips():
+                return True
 
         ship = self.get_common_rarity_dd()
         if ship:
@@ -379,12 +347,12 @@ class GemsFarming(CampaignRun, FleetEquipment, Dock):
 
     def triggered_stop_condition(self, oil_check=True):
         # Lv32 limit
-        if self.change_flagship and self.campaign.config.LV32_TRIGGERED:
+        if self.campaign.config.LV32_TRIGGERED:
             self._trigger_lv32 = True
             logger.hr('TRIGGERED LV32 LIMIT')
             return True
 
-        if self.campaign.map_is_auto_search and self.campaign.config.GEMS_EMOTION_TRIGGRED:
+        if self.campaign.map_is_auto_search and self.campaign.config.GEMS_EMOTION_TRIGGERED:
             self._trigger_emotion = True
             logger.hr('TRIGGERED EMOTION LIMIT')
             return True
@@ -399,7 +367,7 @@ class GemsFarming(CampaignRun, FleetEquipment, Dock):
             mode (str): `normal` or `hard`
             total (int):
         """
-        self.config.STOP_IF_REACH_LV32 = self.change_flagship
+        self.config.override(STOP_IF_REACH_LV32=True)
 
         while 1:
             self._trigger_lv32 = False
@@ -415,9 +383,7 @@ class GemsFarming(CampaignRun, FleetEquipment, Dock):
 
             # End
             if self._trigger_lv32 or self._trigger_emotion:
-                success = True
-                if self.change_flagship:
-                    success = self.flagship_change()
+                success = self.flagship_change()
                 if self.change_vanguard:
                     success = success and self.vanguard_change()
 
@@ -430,7 +396,7 @@ class GemsFarming(CampaignRun, FleetEquipment, Dock):
                 self._trigger_lv32 = False
                 self._trigger_emotion = False
                 self.campaign.config.LV32_TRIGGERED = False
-                self.campaign.config.GEMS_EMOTION_TRIGGRED = False
+                self.campaign.config.GEMS_EMOTION_TRIGGERED = False
 
                 # Scheduler
                 if self.config.task_switched():

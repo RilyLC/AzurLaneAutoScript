@@ -1,19 +1,18 @@
 from module.base.mask import Mask
 from module.base.timer import Timer
-from module.campaign.campaign_base import CampaignBase as CampaignBase_
 from module.handler.assets import STRATEGY_OPENED
+from module.handler.strategy import MOB_MOVE_OFFSET
 from module.logger import logger
 from module.map.map_grids import SelectedGrids
 from module.map.utils import location_ensure
 from module.map_detection.grid import GridInfo
-from module.map_detection.utils_assets import ASSETS
 
-MASK_MAP_UI_W15 = Mask(file='./assets/mask/MASK_MAP_UI_W15.png')
+from .campaign_support_fleet import CampaignBase as CampaignBase_
 
 
 class Config:
     # Ambushes can be avoid by having more DDs.
-    MAP_WALK_OPTIMIZE = False
+    MAP_WALK_TURNING_OPTIMIZE = False
     MAP_HAS_MYSTERY = False
     MAP_ENEMY_TEMPLATE = ['Light', 'Main', 'Carrier', 'CarrierSpecial']
     INTERNAL_LINES_FIND_PEAKS_PARAMETERS = {
@@ -42,27 +41,17 @@ class W15GridInfo(GridInfo):
 
 
 class CampaignBase(CampaignBase_):
-    ENEMY_FILTER = '1T > 1L > 1E > 1M > 2T > 2L > 2E > 2M > 3T > 3L > 3E > 3M'
-
-    def map_data_init(self, map_):
-        super().map_data_init(map_)
-        # Patch ui_mask, get rid of supporting fleet
-        _ = ASSETS.ui_mask
-        ASSETS.ui_mask = MASK_MAP_UI_W15.image
+    ENEMY_FILTER = '1L > 1M > 1E > 2L > 3L > 2M > 2E > 1C > 2C > 3M > 3E > 3C'
 
     map_has_mob_move = True
 
-    def strategy_set_execute(self, formation_index=None, sub_view=None, sub_hunt=None):
+    def strategy_set_execute(self, formation=None, sub_view=None, sub_hunt=None):
         super().strategy_set_execute(
-            formation_index=formation_index,
+            formation=formation,
             sub_view=sub_view,
             sub_hunt=sub_hunt,
         )
         logger.attr("Map has mob move", self.strategy_has_mob_move())
-
-    def _map_swipe(self, vector, box=(239, 159, 1175, 628)):
-        # Left border to 239, avoid swiping on support fleet
-        return super()._map_swipe(vector, box=box)
 
     def mob_movable(self, location, target):
         """
@@ -163,7 +152,7 @@ class CampaignBase(CampaignBase_):
                 self.device.screenshot()
 
             # End
-            if self.appear(STRATEGY_OPENED, offset=(120, 120)):
+            if self.appear(STRATEGY_OPENED, offset=MOB_MOVE_OFFSET):
                 break
             # Click
             if interval.reached() and self.is_in_strategy_mob_move():
@@ -216,3 +205,4 @@ class CampaignBase(CampaignBase_):
         self._mob_move_info_change(location, target)
         self.find_path_initial()
         self.map.show()
+        return True

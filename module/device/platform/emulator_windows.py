@@ -110,6 +110,8 @@ class Emulator(EmulatorBase):
                 return cls.LDPlayer4
             elif dir1 == 'ldplayer9':
                 return cls.LDPlayer9
+            elif dir1 == 'ldplayer14':
+                return cls.LDPlayer14
             else:
                 return cls.LDPlayer3
         if exe == 'nemuplayer.exe':
@@ -119,7 +121,7 @@ class Emulator(EmulatorBase):
                 return cls.MuMuPlayerX
             else:
                 return cls.MuMuPlayer
-        if exe == 'mumuplayer.exe':
+        if exe in ['mumuplayer.exe', 'mumunxmain.exe']:
             return cls.MuMuPlayer12
         if exe == 'memu.exe':
             return cls.MEmuPlayer
@@ -168,6 +170,9 @@ class Emulator(EmulatorBase):
         """
         if 'MuMuPlayer.exe' in exe:
             return exe.replace('MuMuPlayer.exe', 'MuMuManager.exe')
+        # MuMuPlayer12 5.0
+        elif 'MuMuNxMain.exe' in exe:
+            return exe.replace('MuMuNxMain.exe', 'MuMuManager.exe')
         elif 'LDPlayer.exe' in exe:
             return exe.replace('LDPlayer.exe', 'ldconsole.exe')
         elif 'dnplayer.exe' in exe:
@@ -299,12 +304,23 @@ class Emulator(EmulatorBase):
             for folder in self.list_folder('../vms', is_dir=True):
                 for file in iter_folder(folder, ext='.nemu'):
                     serial = Emulator.vbox_file_to_serial(file)
+                    name = os.path.basename(folder)
                     if serial:
                         yield EmulatorInstance(
                             serial=serial,
-                            name=os.path.basename(folder),
+                            name=name,
                             path=self.path,
                         )
+                    # Fix for MuMu12 v4.0.4, default instance of which has no forward record in vbox config
+                    else:
+                        instance = EmulatorInstance(
+                            serial=serial,
+                            name=name,
+                            path=self.path,
+                        )
+                        if instance.MuMuPlayer12_id:
+                            instance.serial = f'127.0.0.1:{16384 + 32 * instance.MuMuPlayer12_id}'
+                            yield instance
         elif self == Emulator.MEmuPlayer:
             # ./MemuHyperv VMs/{name}/{name}.memu
             for folder in self.list_folder('./MemuHyperv VMs', is_dir=True):
@@ -450,7 +466,9 @@ class EmulatorManager(EmulatorManagerBase):
             'leidian9',
             'Nemu',
             'Nemu9',
-            'MuMuPlayer-12.0'
+            'MuMuPlayer',
+            'MuMuPlayer-12.0',
+            'MuMu Player 12.0',
             'MEmu',
         ]
         for path in known_uninstall_registry_path:
@@ -495,9 +513,10 @@ class EmulatorManager(EmulatorManagerBase):
             try:
                 exe = proc.cmdline()
                 exe = exe[0].replace(r'\\', '/').replace('\\', '/')
-            except (psutil.AccessDenied, psutil.NoSuchProcess, IndexError):
+            except (psutil.AccessDenied, psutil.NoSuchProcess, IndexError, OSError):
                 # psutil.AccessDenied
                 # NoSuchProcess: process no longer exists (pid=xxx)
+                # OSError: [WinError 87] 参数错误。: '(originated from ReadProcessMemory)'
                 continue
 
             if Emulator.is_emulator(exe):
@@ -521,8 +540,11 @@ class EmulatorManager(EmulatorManagerBase):
                 exe.add(file)
 
         # LDPlayer install path
-        for path in [r'SOFTWARE\leidian\ldplayer',
-                     r'SOFTWARE\leidian\ldplayer9']:
+        for path in [
+            r'SOFTWARE\leidian\ldplayer',
+            r'SOFTWARE\leidian\ldplayer9',
+            r'SOFTWARE\leidian\ldplayer14',
+        ]:
             ld = self.get_install_dir_from_reg(path, 'InstallDir')
             if ld:
                 ld = abspath(os.path.join(ld, './dnplayer.exe'))
